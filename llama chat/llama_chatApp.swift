@@ -9,9 +9,17 @@ import SwiftUI
 
 @main
 struct llama_chatApp: App {
+    @StateObject private var userSettings = UserSettings()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if userSettings.isLoggedIn {
+                ContentView(username: userSettings.username)
+                    .environmentObject(userSettings)
+            } else {
+                WelcomeView()
+                    .environmentObject(userSettings)
+            }
         }
     }
 }

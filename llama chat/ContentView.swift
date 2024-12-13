@@ -21,9 +21,11 @@ extension AnyTransition {
 }
 
 struct ContentView: View {
+    let username: String
+
     var body: some View {
         NavigationStack {
-            ChatSidebarView()
+            ChatSidebarView(username: username)
         }
     }
 }
@@ -133,26 +135,47 @@ struct ChatView: View {
 }
 
 struct ChatSidebarView: View {
+    let username: String
+    @EnvironmentObject private var userSettings: UserSettings
     @State private var showingNewChatSheet = false
     @State private var showingEditSheet = false
     @State private var selectedChatId: Int?
 
     var body: some View {
         List {
-            ForEach(1...5, id: \.self) { index in
-                NavigationLink {
-                    ChatView(chatId: index)
-                } label: {
-                    ChatRowView(index: index)
-                        .swipeActions {
-                            Button {
-                                selectedChatId = index
-                                showingEditSheet = true
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
+            // Username section
+            Section {
+                HStack {
+                    Image(systemName: "person.circle.fill")
+                        .font(.title)
+                        .foregroundStyle(.purple)
+                    Text(username)
+                        .font(.headline)
+                    Spacer()
+                    Button(action: { userSettings.logout() }) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            // Existing chats section
+            Section {
+                ForEach(1...5, id: \.self) { index in
+                    NavigationLink {
+                        ChatView(chatId: index)
+                    } label: {
+                        ChatRowView(index: index)
+                            .swipeActions {
+                                Button {
+                                    selectedChatId = index
+                                    showingEditSheet = true
+                                } label: {
+                                    Label("Edit", systemImage: "pencil")
+                                }
+                                .tint(.blue)
                             }
-                            .tint(.blue)
-                        }
+                    }
                 }
             }
         }
@@ -361,5 +384,6 @@ struct Pattern: View {
 
 
 #Preview {
-    ContentView()
+    ContentView(username: "JohnDoe")
+        .environmentObject(UserSettings())
 }
