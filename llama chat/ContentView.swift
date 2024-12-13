@@ -31,167 +31,60 @@ struct ContentView: View {
 }
 
 struct ChatView: View {
+    // Consolidate related state variables
+    private struct ViewState {
+        var message: String = ""
+        var chatMessages: [ChatMessage] = []
+        var isTyping = false
+        var showMediaButtons = true
+        var keyboardOffset: CGFloat = 0
+        var keyboardHeight: CGFloat = 0
+        var scrollOffset: CGFloat = 0
+        var dragOffset: CGFloat = 0
+
+        // Add computed properties
+        var shouldShowKeyboard: Bool {
+            keyboardOffset > 0
+        }
+
+        var effectiveOffset: CGFloat {
+            max(0, keyboardOffset + dragOffset)
+        }
+    }
+
     let chatId: Int
-    @State private var message: String = ""
-    @State private var chatMessages: [ChatMessage] = []
-    @State private var isTyping = false
-    @State private var inputHeight: CGFloat = 44
-    @State private var showMediaButtons = true
+    @State private var viewState = ViewState()
     @FocusState private var isInputFocused: Bool
-    @State private var keyboardOffset: CGFloat = 0
-    @State private var dragOffset: CGFloat = 0
-    @State private var keyboardHeight: CGFloat = 0
-    @State private var scrollOffset: CGFloat = 0
     @GestureState private var dragState: CGFloat = 0
+
+    // Constants moved to top for better maintainability
+    private enum Constants {
+        static let minInputHeight: CGFloat = 36
+        static let dismissThreshold: CGFloat = 100
+        static let buttonSize: CGFloat = 44 // Following Apple's touch target guidelines
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: ScrollOffsetPreferenceKey.self,
-                        value: geometry.frame(in: .named("scroll")).origin.y
-                    )
-                }
-                .frame(height: 0)
-
-                LazyVStack(spacing: 16) {
-                    ForEach(chatMessages) { message in
-                        ChatBubbleView(message: message)
-                            .transition(.moveAndFade)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 24)
-            }
-            .coordinateSpace(name: "scroll")
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
-                scrollOffset = value
-            }
-            .gesture(
-                DragGesture()
-                    .updating($dragState) { value, state, _ in
-                        if scrollOffset >= 0 && isInputFocused {
-                            state = value.translation.height
-
-                            if value.location.y >= UIScreen.main.bounds.height - 100 {
-                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                                    keyboardOffset = max(0, value.translation.height)
-                                }
-                            }
-                        }
-                    }
-                    .onEnded { value in
-                        let dismissThreshold: CGFloat = 100
-                        if keyboardOffset > dismissThreshold {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isInputFocused = false
-                                keyboardOffset = 0
-                            }
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                keyboardOffset = 0
-                            }
-                        }
-                    }
-            )
-            .simultaneousGesture(
-                TapGesture()
-                    .onEnded { _ in
-                        if isInputFocused {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isInputFocused = false
-                                keyboardOffset = 0
-                                dragOffset = 0
-                            }
-                        }
-                    }
-            )
-
-            // Input area
-            VStack(spacing: 0) {
-                Divider()
-                HStack(alignment: .bottom, spacing: 12) {
-                    // Input Field
-                    TextField("Message", text: $message, axis: .vertical)
-                        .focused($isInputFocused)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .frame(minHeight: 36)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20)
-                                .fill(Color(.secondarySystemBackground))
-                        )
-                        .onChange(of: message) { oldValue, newValue in
-                            withAnimation(.spring(duration: 0.3)) {
-                                showMediaButtons = newValue.isEmpty
-                            }
-                        }
-
-                    // Dynamic Buttons
-                    HStack(spacing: 16) {
-                        if showMediaButtons {
-                            Button(action: { /* Camera action */ }) {
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(.gray)
-                                    .frame(width: 36, height: 36)
-                                    .background(
-                                        Circle()
-                                            .fill(Color(.secondarySystemBackground))
-                                    )
-                            }
-                            .transition(AnimationConstants.Transitions.buttonTransition)
-                            .pressAnimation()
-
-                            Button(action: { /* Mic action */ }) {
-                                Image(systemName: "mic.fill")
-                                    .font(.system(size: 20))
-                                    .foregroundStyle(.gray)
-                                    .frame(width: 36, height: 36)
-                                    .background(
-                                        Circle()
-                                            .fill(Color(.secondarySystemBackground))
-                                    )
-                            }
-                            .transition(AnimationConstants.Transitions.buttonTransition)
-                            .pressAnimation()
-                        } else {
-                            Button(action: sendMessage) {
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(width: 36, height: 36)
-                                    .background(
-                                        Circle()
-                                            .fill(Color.accentColor.gradient)
-                                    )
-                            }
-                            .transition(AnimationConstants.Transitions.buttonTransition)
-                            .pressAnimation()
-                        }
-                    }
-                    .animation(.spring(duration: 0.3), value: showMediaButtons)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
-            }
-            .offset(y: keyboardOffset)
+            messageList
+            inputArea
         }
         .navigationTitle("Chat \(chatId)")
         .navigationBarTitleDisplayMode(.inline)
         .coordinateSpace(name: "chat")
-        .onChange(of: keyboardOffset) { _, newOffset in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                dragOffset = newOffset
+        .onChange(of: viewState.keyboardOffset) { _, newOffset in
+            withAnimation(.spring(
+                response: AnimationConstants.springResponse,
+                dampingFraction: AnimationConstants.springDamping
+            )) {
+                viewState.dragOffset = newOffset
             }
         }
         .onChange(of: isInputFocused) { _, isFocused in
             if !isFocused {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    keyboardOffset = 0
-                    dragOffset = 0
+                    viewState.keyboardOffset = 0
+                    viewState.dragOffset = 0
                 }
             }
         }
@@ -204,7 +97,7 @@ struct ChatView: View {
                 guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
                     return
                 }
-                keyboardHeight = keyboardFrame.height
+                viewState.keyboardHeight = keyboardFrame.height
             }
 
             NotificationCenter.default.addObserver(
@@ -212,18 +105,160 @@ struct ChatView: View {
                 object: nil,
                 queue: .main
             ) { _ in
-                keyboardHeight = 0
+                viewState.keyboardHeight = 0
             }
         }
     }
 
+    // Break down into smaller views for better maintainability
+    private var messageList: some View {
+        ScrollView {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: ScrollOffsetPreferenceKey.self,
+                    value: geometry.frame(in: .named("scroll")).origin.y
+                )
+            }
+            .frame(height: 0)
+
+            LazyVStack(spacing: 16) {
+                ForEach(viewState.chatMessages) { message in
+                    ChatBubbleView(message: message)
+                        .transition(AnimationConstants.Transitions.messageTransition)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 24)
+        }
+        .coordinateSpace(name: "scroll")
+        .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+            viewState.scrollOffset = value
+        }
+        .gesture(
+            DragGesture()
+                .updating($dragState) { value, state, _ in
+                    if viewState.scrollOffset >= 0 && isInputFocused {
+                        state = value.translation.height
+
+                        if value.location.y >= UIScreen.main.bounds.height - 100 {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                viewState.keyboardOffset = max(0, value.translation.height)
+                            }
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let dismissThreshold: CGFloat = 100
+                    if viewState.keyboardOffset > dismissThreshold {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isInputFocused = false
+                            viewState.keyboardOffset = 0
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            viewState.keyboardOffset = 0
+                        }
+                    }
+                }
+        )
+        .simultaneousGesture(
+            TapGesture()
+                .onEnded { _ in
+                    if isInputFocused {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isInputFocused = false
+                            viewState.keyboardOffset = 0
+                            viewState.dragOffset = 0
+                        }
+                    }
+                }
+        )
+    }
+
+    private var inputArea: some View {
+        VStack(spacing: 0) {
+            Divider()
+            HStack(alignment: .bottom, spacing: 12) {
+                messageInput
+                actionButtons
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial)
+        }
+        .offset(y: viewState.keyboardOffset)
+    }
+
+    private var messageInput: some View {
+        TextField("Message", text: $viewState.message, axis: .vertical)
+            .focused($isInputFocused)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(minHeight: Constants.minInputHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(.secondarySystemBackground))
+            )
+            .onChange(of: viewState.message) { _, newValue in
+                withAnimation(.spring(duration: AnimationConstants.springResponse)) {
+                    viewState.showMediaButtons = newValue.isEmpty
+                }
+            }
+            .accessibilityLabel("Message input field")
+            .accessibilityHint("Double tap to enter your message")
+    }
+
+    private var actionButtons: some View {
+        HStack(spacing: 16) {
+            if viewState.showMediaButtons {
+                mediaButtons
+            } else {
+                sendButton
+            }
+        }
+        .animation(
+            .spring(duration: AnimationConstants.springResponse),
+            value: viewState.showMediaButtons
+        )
+    }
+
+    private var mediaButtons: some View {
+        HStack(spacing: 12) {
+            Button(action: {}) {
+                Image(systemName: "photo")
+                    .font(.system(size: 20))
+                    .frame(width: Constants.buttonSize, height: Constants.buttonSize)
+                    .foregroundColor(.accentColor)
+            }
+
+            Button(action: {}) {
+                Image(systemName: "mic")
+                    .font(.system(size: 20))
+                    .frame(width: Constants.buttonSize, height: Constants.buttonSize)
+                    .foregroundColor(.accentColor)
+            }
+        }
+    }
+
+    private var sendButton: some View {
+        Button(action: sendMessage) {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.system(size: 30))
+                .foregroundColor(.accentColor)
+                .frame(width: Constants.buttonSize, height: Constants.buttonSize)
+        }
+        .transition(AnimationConstants.Transitions.buttonTransition)
+        .accessibilityLabel("Send message")
+        .accessibilityHint("Double tap to send your message")
+    }
+
     func sendMessage() {
-        guard !message.isEmpty else { return }
+        guard !viewState.message.isEmpty else { return }
 
-        let userMessage = ChatMessage(content: message, isUser: true)
-        chatMessages.append(userMessage)
+        let userMessage = ChatMessage(content: viewState.message, isUser: true)
+        viewState.chatMessages.append(userMessage)
 
-        message = ""
+        viewState.message = ""
 
         // Simulate API response
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
@@ -231,7 +266,7 @@ struct ChatView: View {
                 content: "This is a simulated AI response. In the future, this will be replaced with actual API calls.",
                 isUser: false
             )
-            chatMessages.append(response)
+            viewState.chatMessages.append(response)
         }
     }
 }
@@ -491,6 +526,53 @@ struct Pattern: View {
     }
 }
 
+// Create a dedicated KeyboardManager
+class KeyboardManager: ObservableObject {
+    @Published var keyboardHeight: CGFloat = 0
+
+    init() {
+        setupKeyboardObservers()
+    }
+
+    private func setupKeyboardObservers() {
+        NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { [weak self] notification in
+            guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            self?.keyboardHeight = keyboardFrame.height
+        }
+
+        NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.keyboardHeight = 0
+        }
+    }
+}
+
+class ChatManager: ObservableObject {
+    @Published private(set) var messages: [ChatMessage] = []
+
+    func sendMessage(_ content: String) {
+        let message = ChatMessage(content: content, isUser: true)
+        messages.append(message)
+
+        // Simulate API response (replace with actual API call)
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            await MainActor.run {
+                let response = ChatMessage(
+                    content: "AI response...",
+                    isUser: false
+                )
+                messages.append(response)
+            }
+        }
+    }
+}
+
+protocol ChatManagerProtocol {
+    var messages: [ChatMessage] { get }
+    func sendMessage(_ content: String) async throws
+}
+
+// Make ChatManager conform to this protocol for better testing
 
 #Preview {
     ContentView(username: "JohnDoe")
