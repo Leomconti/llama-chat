@@ -8,6 +8,18 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Extensions
+extension AnyTransition {
+    static var moveAndFade: AnyTransition {
+        .asymmetric(
+            insertion: .scale(scale: 0.9)
+                .combined(with: .opacity)
+                .combined(with: .offset(y: 20)),
+            removal: .scale(scale: 0.8).combined(with: .opacity)
+        )
+    }
+}
+
 struct ContentView: View {
     var body: some View {
         NavigationStack {
@@ -23,7 +35,6 @@ struct ChatView: View {
     @State private var isTyping = false
     @State private var inputHeight: CGFloat = 44
     @State private var showMediaButtons = true
-
     var body: some View {
         VStack(spacing: 0) {
             // Chat Messages
@@ -55,7 +66,7 @@ struct ChatView: View {
                         .frame(height: inputHeight)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(Capsule())
-                        .onChange(of: message) { newValue in
+                        .onChange(of: message) { oldValue, newValue in
                             withAnimation(.spring(duration: 0.3)) {
                                 showMediaButtons = newValue.isEmpty
                             }
@@ -102,7 +113,7 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    private func sendMessage() {
+    func sendMessage() {
         guard !message.isEmpty else { return }
 
         let userMessage = ChatMessage(content: message, isUser: true)
@@ -348,17 +359,6 @@ struct Pattern: View {
     }
 }
 
-// Animation Extension
-extension AnyTransition {
-    static var moveAndFade: AnyTransition {
-        .asymmetric(
-            insertion: .scale(scale: 0.9)
-                .combined(with: .opacity)
-                .combined(with: .offset(y: 20)),
-            removal: .scale(scale: 0.8).combined(with: .opacity)
-        )
-    }
-}
 
 #Preview {
     ContentView()
