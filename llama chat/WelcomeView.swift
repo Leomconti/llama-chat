@@ -11,23 +11,6 @@ struct WelcomeView: View {
             VStack(spacing: 30) {
                 // Logo/Title Area
                 VStack(spacing: 20) {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.purple, .blue],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 100, height: 100)
-                        .overlay(
-                            Image(systemName: "bubble.left.and.bubble.right.fill")
-                                .font(.system(size: 40))
-                                .foregroundColor(.white)
-                        )
-                        .opacity(isAnimating ? 1 : 0)
-                        .offset(y: isAnimating ? 0 : 20)
-
                     Text("Llama Chat")
                         .font(.largeTitle)
                         .fontWeight(.bold)
