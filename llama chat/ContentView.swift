@@ -21,6 +21,8 @@ struct ChatView: View {
     @State private var message: String = ""
     @State private var chatMessages: [ChatMessage] = []
     @State private var isTyping = false
+    @State private var inputHeight: CGFloat = 44
+    @State private var showMediaButtons = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,42 +49,49 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 Divider()
                 HStack(spacing: 12) {
-                    // Media Buttons
-                    HStack(spacing: 16) {
-                        Button(action: { /* Image picker */ }) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.gray)
-                        }
-
-                        Button(action: { /* Audio recording */ }) {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.gray)
-                        }
-                    }
-                    .padding(.leading, 8)
-
                     // Input Field
-                    TextField("Message", text: $message)
+                    TextField("Message", text: $message, axis: .vertical)
                         .padding(.horizontal, 16)
-                        .frame(height: 44)
+                        .frame(height: inputHeight)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(Capsule())
+                        .onChange(of: message) { newValue in
+                            withAnimation(.spring(duration: 0.3)) {
+                                showMediaButtons = newValue.isEmpty
+                            }
+                        }
 
-                    // Send Button
-                    Button(action: sendMessage) {
-                        Circle()
-                            .fill(message.isEmpty ? Color.gray.opacity(0.3) : Color.accentColor)
-                            .frame(width: 44, height: 44)
-                            .overlay(
-                                Image(systemName: "arrow.up")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .foregroundColor(message.isEmpty ? .gray : .white)
-                            )
+                    // Dynamic Buttons
+                    HStack(spacing: 16) {
+                        if showMediaButtons {
+                            Button(action: { /* Camera action */ }) {
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.gray)
+                            }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+
+                            Button(action: { /* Mic action */ }) {
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.gray)
+                            }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        } else {
+                            Button(action: sendMessage) {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 44, height: 44)
+                                    .overlay(
+                                        Image(systemName: "arrow.up")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    )
+                            }
+                            .transition(.scale.combined(with: .opacity))
+                        }
                     }
-                    .disabled(message.isEmpty)
-                    .animation(.spring(), value: message.isEmpty)
+                    .animation(.spring(duration: 0.3), value: showMediaButtons)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
