@@ -37,6 +37,10 @@ struct ChatView: View {
     @State private var isTyping = false
     @State private var inputHeight: CGFloat = 44
     @State private var showMediaButtons = true
+    @FocusState private var isInputFocused: Bool
+    @State private var keyboardOffset: CGFloat = 0
+    @State private var isDraggingKeyboard = false
+
     var body: some View {
         VStack(spacing: 0) {
             // Chat Messages
@@ -57,17 +61,54 @@ struct ChatView: View {
                             .opacity(0.03)
                     )
             )
+            .simultaneousGesture(
+                DragGesture()
+                    .onChanged { gesture in
+                        if gesture.translation.height > 0 {
+                            isDraggingKeyboard = true
+                            let translation = min(gesture.translation.height, 200)
+                            keyboardOffset = translation
 
-            // Updated Message Input
+                            if translation > 100 {
+                                isInputFocused = false
+                            }
+                        }
+                    }
+                    .onEnded { gesture in
+                        isDraggingKeyboard = false
+                        if gesture.translation.height > 100 {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                keyboardOffset = 0
+                                isInputFocused = false
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                keyboardOffset = 0
+                            }
+                        }
+                    }
+            )
+            .onTapGesture {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    keyboardOffset = 0
+                    isInputFocused = false
+                }
+            }
+
+            // Updated Message Input with improved UI
             VStack(spacing: 0) {
                 Divider()
-                HStack(spacing: 12) {
+                HStack(alignment: .bottom, spacing: 12) {
                     // Input Field
                     TextField("Message", text: $message, axis: .vertical)
+                        .focused($isInputFocused)
                         .padding(.horizontal, 16)
-                        .frame(height: inputHeight)
-                        .background(Color(.secondarySystemBackground))
-                        .clipShape(Capsule())
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20)
+                                .fill(Color(.secondarySystemBackground))
+                        )
                         .onChange(of: message) { oldValue, newValue in
                             withAnimation(.spring(duration: 0.3)) {
                                 showMediaButtons = newValue.isEmpty
@@ -81,6 +122,11 @@ struct ChatView: View {
                                 Image(systemName: "camera.fill")
                                     .font(.system(size: 20))
                                     .foregroundStyle(.gray)
+                                    .frame(width: 36, height: 36)
+                                    .background(
+                                        Circle()
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
                             }
                             .transition(.move(edge: .trailing).combined(with: .opacity))
 
@@ -88,17 +134,22 @@ struct ChatView: View {
                                 Image(systemName: "mic.fill")
                                     .font(.system(size: 20))
                                     .foregroundStyle(.gray)
+                                    .frame(width: 36, height: 36)
+                                    .background(
+                                        Circle()
+                                            .fill(Color(.secondarySystemBackground))
+                                    )
                             }
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                         } else {
                             Button(action: sendMessage) {
-                                Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 44, height: 44)
-                                    .overlay(
-                                        Image(systemName: "arrow.up")
-                                            .font(.system(size: 20, weight: .semibold))
-                                            .foregroundColor(.white)
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 36, height: 36)
+                                    .background(
+                                        Circle()
+                                            .fill(Color.accentColor.gradient)
                                     )
                             }
                             .transition(.scale.combined(with: .opacity))
@@ -107,12 +158,21 @@ struct ChatView: View {
                     .animation(.spring(duration: 0.3), value: showMediaButtons)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
             }
         }
         .navigationTitle("Chat \(chatId)")
         .navigationBarTitleDisplayMode(.inline)
+        .offset(y: keyboardOffset)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isInputFocused)
+        .onChange(of: isInputFocused) { _, isFocused in
+            if !isFocused && !isDraggingKeyboard {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    keyboardOffset = 0
+                }
+            }
+        }
     }
 
     func sendMessage() {
