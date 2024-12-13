@@ -39,12 +39,22 @@ struct ChatView: View {
     @State private var showMediaButtons = true
     @FocusState private var isInputFocused: Bool
     @State private var keyboardOffset: CGFloat = 0
-    @State private var isDraggingKeyboard = false
+    @State private var dragOffset: CGFloat = 0
+    @State private var keyboardHeight: CGFloat = 0
+    @State private var scrollOffset: CGFloat = 0
+    @GestureState private var dragState: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
-            // Chat Messages
             ScrollView {
+                GeometryReader { geometry in
+                    Color.clear.preference(
+                        key: ScrollOffsetPreferenceKey.self,
+                        value: geometry.frame(in: .named("scroll")).origin.y
+                    )
+                }
+                .frame(height: 0)
+
                 LazyVStack(spacing: 16) {
                     ForEach(chatMessages) { message in
                         ChatBubbleView(message: message)
@@ -54,32 +64,29 @@ struct ChatView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 24)
             }
-            .background(
-                Color(.systemBackground)
-                    .overlay(
-                        Pattern()
-                            .opacity(0.03)
-                    )
-            )
-            .simultaneousGesture(
+            .coordinateSpace(name: "scroll")
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { value in
+                scrollOffset = value
+            }
+            .gesture(
                 DragGesture()
-                    .onChanged { gesture in
-                        if gesture.translation.height > 0 {
-                            isDraggingKeyboard = true
-                            let translation = min(gesture.translation.height, 200)
-                            keyboardOffset = translation
+                    .updating($dragState) { value, state, _ in
+                        if scrollOffset >= 0 && isInputFocused {
+                            state = value.translation.height
 
-                            if translation > 100 {
-                                isInputFocused = false
+                            if value.location.y >= UIScreen.main.bounds.height - 100 {
+                                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                                    keyboardOffset = max(0, value.translation.height)
+                                }
                             }
                         }
                     }
-                    .onEnded { gesture in
-                        isDraggingKeyboard = false
-                        if gesture.translation.height > 100 {
+                    .onEnded { value in
+                        let dismissThreshold: CGFloat = 100
+                        if keyboardOffset > dismissThreshold {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                keyboardOffset = 0
                                 isInputFocused = false
+                                keyboardOffset = 0
                             }
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -88,14 +95,20 @@ struct ChatView: View {
                         }
                     }
             )
-            .onTapGesture {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    keyboardOffset = 0
-                    isInputFocused = false
-                }
-            }
+            .simultaneousGesture(
+                TapGesture()
+                    .onEnded { _ in
+                        if isInputFocused {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isInputFocused = false
+                                keyboardOffset = 0
+                                dragOffset = 0
+                            }
+                        }
+                    }
+            )
 
-            // Updated Message Input with improved UI
+            // Input area
             VStack(spacing: 0) {
                 Divider()
                 HStack(alignment: .bottom, spacing: 12) {
@@ -128,7 +141,8 @@ struct ChatView: View {
                                             .fill(Color(.secondarySystemBackground))
                                     )
                             }
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .transition(AnimationConstants.Transitions.buttonTransition)
+                            .pressAnimation()
 
                             Button(action: { /* Mic action */ }) {
                                 Image(systemName: "mic.fill")
@@ -140,7 +154,8 @@ struct ChatView: View {
                                             .fill(Color(.secondarySystemBackground))
                                     )
                             }
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                            .transition(AnimationConstants.Transitions.buttonTransition)
+                            .pressAnimation()
                         } else {
                             Button(action: sendMessage) {
                                 Image(systemName: "arrow.up")
@@ -152,7 +167,8 @@ struct ChatView: View {
                                             .fill(Color.accentColor.gradient)
                                     )
                             }
-                            .transition(.scale.combined(with: .opacity))
+                            .transition(AnimationConstants.Transitions.buttonTransition)
+                            .pressAnimation()
                         }
                     }
                     .animation(.spring(duration: 0.3), value: showMediaButtons)
@@ -161,16 +177,42 @@ struct ChatView: View {
                 .padding(.vertical, 8)
                 .background(.ultraThinMaterial)
             }
+            .offset(y: keyboardOffset)
         }
         .navigationTitle("Chat \(chatId)")
         .navigationBarTitleDisplayMode(.inline)
-        .offset(y: keyboardOffset)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isInputFocused)
+        .coordinateSpace(name: "chat")
+        .onChange(of: keyboardOffset) { _, newOffset in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                dragOffset = newOffset
+            }
+        }
         .onChange(of: isInputFocused) { _, isFocused in
-            if !isFocused && !isDraggingKeyboard {
+            if !isFocused {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     keyboardOffset = 0
+                    dragOffset = 0
                 }
+            }
+        }
+        .onAppear {
+            NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillShowNotification,
+                object: nil,
+                queue: .main
+            ) { notification in
+                guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+                    return
+                }
+                keyboardHeight = keyboardFrame.height
+            }
+
+            NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardWillHideNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                keyboardHeight = 0
             }
         }
     }
@@ -191,6 +233,13 @@ struct ChatView: View {
             )
             chatMessages.append(response)
         }
+    }
+}
+
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -390,27 +439,27 @@ struct ChatBubbleView: View {
         HStack(alignment: .bottom, spacing: 8) {
             if message.isUser {
                 Spacer()
-                Text(message.content)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color.accentColor.gradient)
-                    )
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 2)
+                messageContent
+                    .modifier(MessageAnimationModifier(message: message))
             } else {
-                Text(message.content)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20)
-                            .fill(Color(.secondarySystemBackground))
-                    )
-                    .foregroundStyle(.primary)
+                messageContent
+                    .modifier(MessageAnimationModifier(message: message))
                 Spacer()
             }
         }
+    }
+
+    private var messageContent: some View {
+        Text(message.content)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(message.isUser ? Color.accentColor.gradient : Color(.secondarySystemBackground).gradient)
+            )
+            .foregroundStyle(message.isUser ? .white : .primary)
+            .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 2)
+            .pressAnimation()
     }
 }
 
